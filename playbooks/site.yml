@@ -3,4 +3,4 @@
   hosts: keepalived
   become: true
   roles:
-    - role: ansible-role-keepalived
+    - role: "{{ playbook_dir }}/.."
