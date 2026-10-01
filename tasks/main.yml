@@ -1,0 +1,113 @@
+---
+- name: Validate supported platform
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+      - ansible_distribution in keepalived_supported_distributions
+    fail_msg: >-
+      This role supports Debian and Ubuntu only; detected
+      {{ ansible_distribution }} ({{ ansible_os_family }}).
+
+- name: Validate role configuration
+  ansible.builtin.assert:
+    that:
+      - keepalived_vrrp_instances | length > 0
+      - >-
+        keepalived_vrrp_instances | map(attribute='name') | list | unique | length
+        == keepalived_vrrp_instances | length
+      - keepalived_virtual_servers | map(attribute='name') | list | unique | length == keepalived_virtual_servers | length
+    fail_msg: >-
+      Define at least one uniquely named VRRP instance and ensure all virtual
+      servers have unique names.
+
+- name: Validate each VRRP instance
+  ansible.builtin.assert:
+    that:
+      - item.interface is defined
+      - item.virtual_router_id is defined
+      - item.virtual_router_id | int >= 1
+      - item.virtual_router_id | int <= 255
+      - item.priority | default(100) | int >= 1
+      - item.priority | default(100) | int <= 255
+      - item.virtual_ipaddresses is defined
+      - item.virtual_ipaddresses | length > 0
+      - item.auth_pass is not defined or item.auth_pass | length <= 8
+      - item.unicast_peers is not defined or item.unicast_src_ip is defined
+    fail_msg: "Invalid VRRP instance {{ item.name | default('unnamed') }}."
+    quiet: true
+  loop: "{{ keepalived_vrrp_instances }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  no_log: "{{ item.auth_pass is defined }}"
+
+- name: Validate each virtual server
+  ansible.builtin.assert:
+    that:
+      - item.address is defined
+      - item.port is defined
+      - item.protocol | default('TCP') | upper in ['TCP', 'UDP']
+      - item.real_servers is defined
+      - item.real_servers | length > 0
+    fail_msg: "Invalid virtual server {{ item.name | default('unnamed') }}."
+    quiet: true
+  loop: "{{ keepalived_virtual_servers }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+
+- name: Install Keepalived
+  ansible.builtin.apt:
+    name: "{{ keepalived_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configure IP forwarding for load balancing
+  ansible.builtin.template:
+    src: 99-keepalived.conf.j2
+    dest: /etc/sysctl.d/99-keepalived.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: keepalived_manage_ip_forwarding
+  notify: Reload sysctl
+
+- name: Create Keepalived configuration directory
+  ansible.builtin.file:
+    path: "{{ keepalived_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install notify_master route-cache flush script
+  ansible.builtin.template:
+    src: flush-route-cache.sh.j2
+    dest: /etc/keepalived/flush-route-cache.sh
+    owner: root
+    group: root
+    mode: "0750"
+  when: keepalived_vrrp_instances | selectattr('notify_master', 'defined') | list | length > 0
+
+- name: Apply IPVS DR onlink routes
+  ansible.builtin.include_tasks: onlink_routes.yml
+  when: keepalived_onlink_routes | length > 0
+
+- name: Render Keepalived configuration
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: "{{ keepalived_config_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+    backup: true
+    validate: >-
+      {{ keepalived_validate_config | ternary('/usr/sbin/keepalived --config-test --use-file=%s', omit) }}
+  notify: Restart keepalived
+  no_log: true
+
+- name: Enable and start Keepalived
+  ansible.builtin.service:
+    name: "{{ keepalived_service_name }}"
+    enabled: "{{ keepalived_service_enabled }}"
+    state: started
+  when: keepalived_manage_service

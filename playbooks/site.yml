@@ -1,0 +1,6 @@
+---
+- name: Configure Keepalived DNS high availability
+  hosts: keepalived
+  become: true
+  roles:
+    - role: ansible-role-keepalived

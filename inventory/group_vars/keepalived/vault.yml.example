@@ -1,0 +1,7 @@
+---
+# Copy this file to vault.yml, replace values, then encrypt the entire file:
+# ansible-vault encrypt --vault-id keepalived@prompt inventory/group_vars/keepalived/vault.yml
+vault_keepalived_vrrp_auth_password: CHANGEME
+# Uncomment only if sudo prompts for a password. Prefer SSH keys.
+# ansible_become_password: replace-me
+

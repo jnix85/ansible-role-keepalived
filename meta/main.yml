@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: keepalived
+  author: infrastructure-team
+  description: Install and configure Keepalived VRRP and IPVS on Debian/Ubuntu
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+    - name: Ubuntu
+      versions:
+        - noble
+        - resolute
+  galaxy_tags:
+    - keepalived
+    - vrrp
+    - ipvs
+    - loadbalancer
+dependencies: []

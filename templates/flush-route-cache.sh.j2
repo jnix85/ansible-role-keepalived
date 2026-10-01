@@ -1,0 +1,6 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# Run by keepalived's notify_master hook on VRRP MASTER transition. Flushes
+# the route cache so a stale cached nexthop for a VIP (the ARP-blackhole bug
+# from 2026-08-19) can't survive a failover.
+ip route flush cache

@@ -1,0 +1,4 @@
+# {{ ansible_managed }}
+net.ipv4.ip_forward = {{ keepalived_ip_forwarding_ipv4 | bool | ternary('1', '0') }}
+net.ipv6.conf.all.forwarding = {{ keepalived_ip_forwarding_ipv6 | bool | ternary('1', '0') }}
+

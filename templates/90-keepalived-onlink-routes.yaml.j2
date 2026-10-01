@@ -1,0 +1,10 @@
+network:
+  version: 2
+  ethernets:
+    {{ keepalived_interface }}:
+      routes:
+{% for item in keepalived_onlink_routes %}
+        - to: {{ item.vip }}/32
+          via: {{ item.vip }}
+          on-link: true
+{% endfor %}

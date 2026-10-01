@@ -1,0 +1,124 @@
+# {{ ansible_managed }}
+global_defs {
+    router_id {{ keepalived_global_defs.router_id }}
+{% if keepalived_global_defs.enable_script_security | default(true) %}
+    enable_script_security
+{% endif %}
+{% if keepalived_global_defs.script_user | default('') %}
+    script_user {{ keepalived_global_defs.script_user }}
+{% endif %}
+{% if keepalived_global_defs.notification_email | default([]) | length > 0 %}
+    notification_email {
+{% for address in keepalived_global_defs.notification_email %}
+        {{ address }}
+{% endfor %}
+    }
+{% endif %}
+{% if keepalived_global_defs.notification_email_from | default('') %}
+    notification_email_from {{ keepalived_global_defs.notification_email_from }}
+{% endif %}
+{% if keepalived_global_defs.smtp_server | default('') %}
+    smtp_server {{ keepalived_global_defs.smtp_server }}
+    smtp_connect_timeout {{ keepalived_global_defs.smtp_connect_timeout | default(30) }}
+{% endif %}
+}
+
+{% for check in keepalived_track_scripts %}
+vrrp_script {{ check.name }} {
+    script "{{ check.script }}"
+    interval {{ check.interval | default(2) }}
+    timeout {{ check.timeout | default(2) }}
+    weight {{ check.weight | default(0) }}
+    rise {{ check.rise | default(1) }}
+    fall {{ check.fall | default(2) }}
+{% if check.user is defined %}
+    user {{ check.user }}
+{% endif %}
+}
+
+{% endfor %}
+{% for instance in keepalived_vrrp_instances %}
+vrrp_instance {{ instance.name }} {
+    state {{ instance.state | default('BACKUP') }}
+    interface {{ instance.interface }}
+    virtual_router_id {{ instance.virtual_router_id }}
+    priority {{ instance.priority | default(100) }}
+    advert_int {{ instance.advert_int | default(1) }}
+{% if instance.version is defined %}
+    version {{ instance.version }}
+{% endif %}
+{% if instance.preempt | default(true) == false %}
+    nopreempt
+{% endif %}
+{% if instance.unicast_src_ip is defined %}
+    unicast_src_ip {{ instance.unicast_src_ip }}
+{% endif %}
+{% if instance.unicast_peers | default([]) | length > 0 %}
+    unicast_peer {
+{% for peer in instance.unicast_peers %}
+        {{ peer }}
+{% endfor %}
+    }
+{% endif %}
+{% if instance.auth_pass is defined %}
+    authentication {
+        auth_type {{ instance.auth_type | default('PASS') }}
+        auth_pass {{ instance.auth_pass }}
+    }
+{% endif %}
+{% if instance.track_scripts | default([]) | length > 0 %}
+    track_script {
+{% for script in instance.track_scripts %}
+        {{ script }}
+{% endfor %}
+    }
+{% endif %}
+    virtual_ipaddress {
+{% for address in instance.virtual_ipaddresses %}
+        {{ address }}
+{% endfor %}
+    }
+{% if instance.notify_master | default('') %}
+    notify_master "{{ instance.notify_master }}"
+{% endif %}
+{% if instance.notify_backup | default('') %}
+    notify_backup "{{ instance.notify_backup }}"
+{% endif %}
+{% if instance.notify_fault | default('') %}
+    notify_fault "{{ instance.notify_fault }}"
+{% endif %}
+}
+
+{% endfor %}
+{% for service in keepalived_virtual_servers %}
+# {{ service.name }}
+virtual_server {{ service.address }} {{ service.port }} {
+    delay_loop {{ service.delay_loop | default(5) }}
+    lb_algo {{ service.lb_algo | default('rr') }}
+    lb_kind {{ service.lb_kind | default('NAT') }}
+    protocol {{ service.protocol | default('TCP') | upper }}
+{% if service.persistence_timeout | default(0) | int > 0 %}
+    persistence_timeout {{ service.persistence_timeout }}
+{% endif %}
+{% for backend in service.real_servers %}
+    real_server {{ backend.address }} {{ backend.port | default(service.port) }} {
+        weight {{ backend.weight | default(1) }}
+{% if backend.inhibit_on_failure | default(true) %}
+        inhibit_on_failure
+{% endif %}
+{% set check = backend.check | default({'type': 'TCP_CHECK'}) %}
+        {{ check.type | default('TCP_CHECK') }} {
+{% if check.type | default('TCP_CHECK') == 'TCP_CHECK' %}
+            connect_timeout {{ check.connect_timeout | default(3) }}
+            retry {{ check.retry | default(2) }}
+            delay_before_retry {{ check.delay_before_retry | default(2) }}
+{% elif check.type == 'MISC_CHECK' %}
+            misc_path "{{ check.misc_path }}"
+            misc_timeout {{ check.misc_timeout | default(5) }}
+{% endif %}
+        }
+    }
+{% endfor %}
+}
+
+{% endfor %}

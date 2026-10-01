@@ -1,0 +1,41 @@
+---
+# Package and service management.
+keepalived_packages:
+  - keepalived
+  - ipvsadm
+keepalived_service_name: keepalived
+keepalived_config_path: /etc/keepalived/keepalived.conf
+keepalived_manage_service: true
+keepalived_service_enabled: true
+
+# global_defs settings. Empty values are omitted.
+keepalived_global_defs:
+  router_id: "{{ inventory_hostname }}"
+  enable_script_security: true
+  script_user: root
+  notification_email: []
+  notification_email_from: ""
+  smtp_server: ""
+  smtp_connect_timeout: 30
+
+# Optional scripts rendered before the VRRP instances. Each item supports:
+# name, script, interval, timeout, weight, rise, fall, user.
+keepalived_track_scripts: []
+# One or more VRRP instances. See README.md for the complete data model.
+keepalived_vrrp_instances: []
+# Native IPVS virtual services (virtual_server blocks).
+keepalived_virtual_servers: []
+# Validate with keepalived itself before replacing the live configuration.
+keepalived_validate_config: true
+
+# Required for IPVS NAT forwarding only — DR mode does not need it.
+keepalived_manage_ip_forwarding: false
+keepalived_ip_forwarding_ipv4: true
+keepalived_ip_forwarding_ipv6: false
+
+# Onlink self-gateway host routes for IPVS DR VIPs (prevents the ARP-blackhole
+# bug — see the comment in inventory/group_vars/keepalived/vars.yml). Each
+# item: {vip, interface}. Persisted via a netplan drop-in; set
+# keepalived_manage_onlink_routes: false to opt out entirely.
+keepalived_onlink_routes: []
+keepalived_manage_onlink_routes: true

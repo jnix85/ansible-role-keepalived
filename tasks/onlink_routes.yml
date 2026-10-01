@@ -1,0 +1,41 @@
+---
+# Onlink self-gateway host routes for each VIP — see the comment on
+# keepalived_onlink_routes in inventory/group_vars/keepalived/vars.yml for
+# why these exist (they prevent the 2026-08-19 IPVS DR ARP-blackhole bug
+# from recurring after a route-cache eviction or keepalived restart).
+
+- name: Ensure netplan is available for onlink route persistence
+  ansible.builtin.apt:
+    name: netplan.io
+    state: present
+  when: keepalived_manage_onlink_routes
+  # VERIFY: confirm the Debian 13 cloud-init image these directors are built
+  # from actually renders network config via netplan (memory from the
+  # original directors says it did — /etc/netplan/static.yaml — but that
+  # was never captured in any Ansible role, so treat as unconfirmed until
+  # checked live on the first newly-provisioned director).
+
+- name: Apply onlink self-gateway routes for each VIP (runtime)
+  ansible.builtin.command:
+    cmd: >-
+      ip route replace {{ item.vip }}/32 via {{ item.vip }}
+      dev {{ item.interface }} onlink
+  loop: "{{ keepalived_onlink_routes }}"
+  loop_control:
+    label: "{{ item.vip }}"
+  changed_when: true
+  when: keepalived_manage_onlink_routes
+
+- name: Persist onlink routes across reboots (netplan drop-in)
+  ansible.builtin.template:
+    src: 90-keepalived-onlink-routes.yaml.j2
+    dest: /etc/netplan/90-keepalived-onlink-routes.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  when: keepalived_manage_onlink_routes
+  # Deliberately not running `netplan apply` here: memory from the
+  # 2026-08-19 incident notes that `netplan apply` on the current VRRP
+  # master flushes its VIPs. The runtime `ip route replace` task above
+  # already applies the route live; this file only needs to exist so the
+  # route is re-created by netplan on the next natural reboot.

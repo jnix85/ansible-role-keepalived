@@ -1,0 +1,93 @@
+---
+# Review the interface, VIPs, and backend addresses before deployment.
+keepalived_interface: eth0
+keepalived_vip: 10.1.0.2
+keepalived_secondary_vip: 10.1.0.3
+keepalived_vip_cidr: 23
+keepalived_secondary_vip_cidr: "{{ keepalived_vip_cidr }}"
+keepalived_vrrp_auth_password: "{{ vault_keepalived_vrrp_auth_password }}"
+# DR mode: the director never forwards backend traffic through itself, so it
+# doesn't need to route packets between interfaces.
+keepalived_manage_ip_forwarding: false
+
+# Onlink self-gateway host routes for each VIP. Without these, IPVS DR mode
+# can silently blackhole a real server after a route-cache eviction: the
+# director ends up ARPing for its own VIP as if it were a gateway
+# (who-has <vip> tell <director>) instead of sending directly to the real
+# server, and that ARP never resolves (real servers stay silent for the VIP
+# by design under arp_ignore=1). Forcing an explicit onlink nexthop makes
+# that fallback impossible. Applied at runtime by tasks/onlink_routes.yml and
+# persisted via a netplan drop-in so they survive reboots.
+keepalived_onlink_routes:
+  - vip: "{{ keepalived_vip }}"
+    interface: "{{ keepalived_interface }}"
+  - vip: "{{ keepalived_secondary_vip }}"
+    interface: "{{ keepalived_interface }}"
+
+keepalived_vrrp_instances:
+  - name: VI_DNS
+    state: BACKUP
+    interface: "{{ keepalived_interface }}"
+    virtual_router_id: 53
+    priority: "{{ keepalived_node_priority }}"
+    advert_int: 1
+    unicast_src_ip: "{{ keepalived_node_ip }}"
+    unicast_peers: >-
+      {{ groups['keepalived'] | reject('equalto', inventory_hostname)
+         | map('extract', hostvars, 'keepalived_node_ip') | list }}
+    auth_type: PASS
+    auth_pass: "{{ keepalived_vrrp_auth_password }}"
+    virtual_ipaddresses:
+      - "{{ keepalived_vip }}/{{ keepalived_vip_cidr }} dev {{ keepalived_interface }}"
+      - "{{ keepalived_secondary_vip }}/{{ keepalived_secondary_vip_cidr }} dev {{ keepalived_interface }}"
+    notify_master: /etc/keepalived/flush-route-cache.sh
+
+# DR mode: the VIP must be bound on lo (arp_ignore=1/arp_announce=2) on every
+# real server. This is currently hand-configured on dns01-05 (not managed by
+# any Ansible role) — /etc/network/interfaces has lo:0/lo:1 for the two VIPs
+# and /etc/sysctl.d/99-lvs-dr.conf sets arp_ignore/arp_announce. Confirmed
+# intact on dns01 (pct 113 @ pve01) during the 2026-08-28 outage
+# investigation. Not touched by this role; if a DNS backend is ever
+# rebuilt from scratch, that config needs to be reapplied by hand until it's
+# codified elsewhere.
+keepalived_dns_backends:
+  - address: 10.1.0.5
+    port: 53
+  - address: 10.1.0.6
+    port: 53
+  - address: 10.1.0.7
+    port: 53
+  - address: 10.1.0.8
+    port: 53
+  - address: 10.1.0.9
+    port: 53
+
+keepalived_virtual_servers:
+  - name: technitium-dns-udp
+    address: "{{ keepalived_vip }}"
+    port: 53
+    protocol: UDP
+    lb_algo: rr
+    lb_kind: DR
+    real_servers: "{{ keepalived_dns_backends }}"
+  - name: technitium-dns-tcp
+    address: "{{ keepalived_vip }}"
+    port: 53
+    protocol: TCP
+    lb_algo: rr
+    lb_kind: DR
+    real_servers: "{{ keepalived_dns_backends }}"
+  - name: technitium-dns-secondary-udp
+    address: "{{ keepalived_secondary_vip }}"
+    port: 53
+    protocol: UDP
+    lb_algo: rr
+    lb_kind: DR
+    real_servers: "{{ keepalived_dns_backends }}"
+  - name: technitium-dns-secondary-tcp
+    address: "{{ keepalived_secondary_vip }}"
+    port: 53
+    protocol: TCP
+    lb_algo: rr
+    lb_kind: DR
+    real_servers: "{{ keepalived_dns_backends }}"

@@ -1,0 +1,4 @@
+---
+keepalived_supported_distributions:
+  - Debian
+  - Ubuntu

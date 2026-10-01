@@ -1,0 +1,24 @@
+---
+- name: Exercise role configuration
+  hosts: localhost
+  gather_facts: false
+  vars:
+    ansible_os_family: Debian
+    ansible_distribution: Debian
+    keepalived_manage_service: false
+    keepalived_validate_config: false
+    keepalived_vrrp_instances:
+      - name: VI_TEST
+        interface: lo
+        virtual_router_id: 53
+        virtual_ipaddresses:
+          - 192.0.2.53/32
+    keepalived_virtual_servers:
+      - name: dns-tcp
+        address: 192.0.2.53
+        port: 53
+        protocol: TCP
+        real_servers:
+          - address: 198.51.100.21
+  roles:
+    - role: ansible-role-keepalived
